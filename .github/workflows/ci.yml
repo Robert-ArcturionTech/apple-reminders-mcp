@@ -1,0 +1,36 @@
+name: Offline pure Swift checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # SwiftPM dependency fetch and compilation happen before the test sandbox.
+      - name: Compile and run pure unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture=$(mktemp -d /private/tmp/reminders-ci.XXXXXX)
+          cp -R "$GITHUB_WORKSPACE/." "$fixture/repo"
+          mkdir -p "$fixture/cache" "$fixture/config" "$fixture/security"
+          cd "$fixture/repo"
+          flags=(--disable-netrc --disable-keychain --manifest-cache none
+            --scratch-path "$fixture/build" --cache-path "$fixture/cache"
+            --config-path "$fixture/config" --security-path "$fixture/security")
+          cleanenv=(env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin TMPDIR=/private/tmp
+            GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
+            CLANG_MODULE_CACHE_PATH="$fixture/cache/clang")
+          "${cleanenv[@]}" /usr/bin/swift build --build-tests --force-resolved-versions "${flags[@]}"
+          bin_path=$("${cleanenv[@]}" /usr/bin/swift build --show-bin-path "${flags[@]}")
+          bin_path=$(cd "$bin_path" && pwd -P)
+          bundle=$(find "$bin_path" -maxdepth 1 -name '*.xctest' -type d -print)
+          test -n "$bundle"
+          test "$(printf '%s\n' "$bundle" | wc -l | tr -d ' ')" = 1
+          xctest_path=$(/usr/bin/xcrun --find xctest)
+          /usr/bin/sandbox-exec -f "$fixture/repo/.github/ci/sandbox.sb" -D "USER_HOME=$HOME" \
+            -D "SERVER=$bin_path/apple-reminders-mcp" env -i PATH=/usr/bin:/bin TMPDIR=/private/tmp \
+            "$xctest_path" "$bundle"

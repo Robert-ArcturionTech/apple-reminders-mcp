@@ -1,0 +1,5 @@
+(version 1)
+(allow default)
+(deny network*)
+(deny file-read* file-write* (subpath (param "USER_HOME")))
+(deny process-exec (literal "/usr/bin/security") (literal "/usr/bin/pbcopy") (literal "/usr/bin/pbpaste") (literal "/usr/bin/open") (literal "/usr/bin/osascript") (literal (param "SERVER")))
